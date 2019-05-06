@@ -1,0 +1,399 @@
+#!/bin/python
+
+import optparse
+import os
+from collections import OrderedDict
+import operator
+from functools import reduce
+import csv
+from copy import deepcopy
+from odf.opendocument import OpenDocumentText
+from odf.style import Style, TextProperties, ParagraphProperties
+from odf.text import P, Span, SoftPageBreak
+from odf.table import Table, TableColumn, TableRow, TableCell
+from odf import teletype
+
+import re
+
+import tableOperations
+import CitationInfo
+
+from frontFace import makeFrontFace
+from textFormat import Bt, Nt, C
+
+from styles import setupABNT
+
+parser = optparse.OptionParser()
+
+parser.add_option('--dir <DIR>', dest='ManuscriptDir', default='')
+parser.add_option('--mono <FILE>', dest='SingleFile', default='')
+parser.add_option(
+    '-R',
+    dest='ParseRefs',
+    action='store_true',
+    default=False,
+    help='Parse references.')
+parser.add_option(
+    '-C',
+    dest='RenderCover',
+    action='store_true',
+    default=False,
+    help='Render the cover of the project.')
+parser.add_option(
+    '-S',
+    dest='RenderSummary',
+    action='store_true',
+    default=False,
+    help='Render summary of project.')
+parser.add_option(
+    '--name <NAME>',
+    dest='Filename',
+    action='store',
+    type='string',
+    default='ABNT_FILE',
+    help='Define filename.')
+
+options, args = parser.parse_args()
+
+
+def makeCitationSection(CitationList):
+    TITLE = C(Span(text="References"), style='Global')
+    CitationPage = [TITLE]
+    for I in range(len(CitationList)):
+        CitationText = "%s %s" % (I + 1, CitationList[I])
+        OB = P()
+        OB.addElement(Nt(CitationText))
+        CitationPage.append(OB)
+        print(CitationText)
+    CitationPage += [P(stylename='Pagebreak')]
+    return CitationPage
+
+
+def countSubSectionAnchor(line):
+    s = 0
+    while line.startswith('>'):
+        line = line[1:]
+        s += 1
+    return line, s
+
+
+def mountABNTCitation(AINFO):
+    if len(AINFO['Authors']) > 1:
+        add = 'et al'
+    else:
+        add = ''
+
+    def MountAuthorName(authorData):
+        try:
+            return "%s %s" % (authorData['LastName'], authorData['Initials'])
+        except:
+            print("Failure to parse %s" % authorData)
+            return ""
+
+    CompactInfo = "(%s %s, %s)" % (AINFO['Authors'][0]['LastName'], add,
+                                   AINFO['Year'])
+
+    Authors = ', '.join([MountAuthorName(x) for x in AINFO['Authors']])
+    FullInfo = "%s.%s.%s.%s;" % (Authors, AINFO['Title'], AINFO['Journal'],
+                                 AINFO['Year'])
+
+    return CompactInfo, Authors, FullInfo
+
+
+def parseManuscriptReferences(Manuscript):
+    ArticleText = re.findall("\[\[[\w./-]+\]\]", Manuscript)
+    ArticleIds = [x.strip("[").strip("]") for x in ArticleText]
+    if not ArticleIds:
+        return Manuscript, []
+    ArticleInfoResults = CitationInfo.getBatchCitationInfo(
+        ArticleIds, Verbose=True)
+    print(ArticleIds)
+    print("Expanding References %i/%i" % (len(ArticleInfoResults),
+                                          len(ArticleIds)))
+
+    SummaryPageInfo = []
+    for z in range(len(ArticleText)):
+        Found = False
+        for AINFO in ArticleInfoResults:
+            if ArticleIds[z] in AINFO['IDs']:
+                CompactInfo, Authors, FullInfo = mountABNTCitation(AINFO)
+
+                Manuscript = Manuscript.replace(ArticleText[z], CompactInfo)
+                SummaryPageInfo.append(FullInfo)
+                Found = True
+                break
+        if not Found:
+            print("NOT FOUND %s" % ArticleIds[z])
+
+    return Manuscript, SummaryPageInfo
+
+
+def getFromDict(DataDict, Indexes):
+    return reduce(operator.getitem, Indexes, DataDict)
+
+
+def writeToDict(DataDict, Indexes, Value):
+    getFromDict(DataDict, Indexes[:-1])[Indexes[-1]] = Value
+
+
+def parseManuscriptFile(TEXT, ChapterNum=0, Debug=True):
+    LINES = TEXT.split('\n')
+    output = ""
+    getNums = lambda structure, Map:\
+              [ len(list(getFromDict(structure, Map[:x+1]).keys()))
+                               for x in range(len(Map)) ]
+    lastline = None
+    InParagraph = False
+    sectionStructure = OrderedDict()
+    sectionCursor = []
+    BlockTable = None
+    TextElements = []
+    newParagraph = lambda: P(stylename="Global")
+    CurrentParagraph = newParagraph()
+    for line in LINES:
+        if line == '':
+            if CurrentParagraph and InParagraph:
+                if BlockTable:
+                    cell.addElement(deepcopy(CurrentParagraph))
+                    InParagraph = False
+                    CurrentParagraph = newParagraph()
+                else:
+                    TextElements.append(CurrentParagraph)
+            CurrentParagraph = newParagraph()
+            InParagraph = True
+
+        if line.startswith('***'):
+            ChapterNum += 1
+            line = line[3:].upper()
+            Title = str(ChapterNum) + ' ' + line
+            sectionStructure.update({line: OrderedDict()})
+            sectionCursor = [line]
+            #CurrentParagraph.addElement(
+            #    Span(stylename="Section Title", text=Title))
+            line = '$' + Title
+            InParagraph = True
+
+        elif '>**' in line:
+            line, s = countSubSectionAnchor(line)
+            ssDIFF = s - len(sectionCursor) + 1
+            #print("~~ diff%i    %s" % (ssDIFF, sectionCursor))
+            if ssDIFF <= 0:
+                sectionCursor = sectionCursor[:ssDIFF - 1]
+            line = line[2:]
+            getFromDict(sectionStructure, sectionCursor).update(
+                OrderedDict({
+                    line: OrderedDict()
+                }))
+
+            Numerations = getNums(sectionStructure, sectionCursor)
+            Numerations = [ChapterNum] + Numerations
+            if Debug:
+                print(Numerations)
+            Title = '.'.join([str(x) for x in Numerations]) + ' ' + line
+            sectionCursor += [line]
+
+            line = '$' + Title
+
+        if line.startswith('$'):
+            S = Span(stylename="boldtext", text=line[1:])
+            CurrentParagraph.addElement(S)
+        elif line.startswith('{'):
+            BlockTable = Table(name='heheh')
+            BlockTable.addElement(TableColumn())
+            row = TableRow()
+            BlockTable.addElement(row)
+            cell = TableCell()
+            row.addElement(cell)
+
+        elif line.startswith('}'):
+            if InParagraph:
+                cell.addElement(deepcopy(CurrentParagraph))
+                CurrentParagraph = P()
+            TextElements.append(deepcopy(BlockTable))
+            BlockTable = None
+            CurrentParagraph = P()
+
+        elif '[table' in line:
+            tablename = line[line.find(' ') + 1:line.find(']')]
+            tablepath = options.ManuscriptDir + '/Tables/' + tablename
+            tableInfo = {'name': tablename}
+            T = tableOperations.parseTableFromCsv(tablepath, tableInfo)
+            TextElements.append(T)
+
+        else:
+            if lastline:
+                QQ = lastline.endswith(" ")
+                WW = line.startswith(" ")
+                if not QQ and not WW:
+                    line = " " + line
+                if QQ and WW:
+                    line = line[1:]
+
+            lastline = line
+            TextSpan = Nt(line)
+            CurrentParagraph.addElement(TextSpan)
+
+    if InParagraph:
+        TextElements.append(CurrentParagraph)
+
+    return TextElements, sectionStructure
+
+
+def generateSequenceOfFiles():
+    SequenceGuide = open(options.ManuscriptDir + '/Sequence.txt')
+    SequenceGuide = SequenceGuide.read().split('\n')
+    SequenceGuide = [x for x in SequenceGuide if x]
+    print(SequenceGuide)
+    return SequenceGuide
+
+
+def generateManuscriptSequence(SequenceGuide):
+    Sequence = []
+    listOfFiles = os.listdir(options.ManuscriptDir)
+
+    def tryFile(TargetQueryName):
+        for File in listOfFiles:
+            if File.startswith(TargetQueryName):
+                return File
+        return None
+
+    for F in SequenceGuide:
+        if '{*}' in F:
+            BaseName = F.strip('{*}')
+            fail, K = 5, 0
+
+            while fail > 0:
+                K += 1
+                count = 0
+                TargetQueryName = BaseName + str(K)
+                TargetName = tryFile(TargetQueryName)
+                if TargetName:
+                    count += 1
+
+                if count > 1:
+                    exit("Ambigous file list! Check manuscript folder.")
+                elif count == 1:
+                    Sequence.append(TargetName)
+                else:
+                    fail -= 1
+
+        else:
+            W = tryFile(F)
+            if W:
+                Sequence.append(W)
+            else:
+                print("File %s not found" % F)
+                exit()
+
+    return Sequence
+
+
+
+
+if __name__ == '__main__':
+    Files = os.listdir(options.ManuscriptDir)
+    if 'Tables' in Files:
+        Tables = os.listdir("%s/Tables" % options.ManuscriptDir)
+    else:
+        Tables = []
+
+    if options.SingleFile:
+        Sequence = generateManuscriptSequence(options.SingleFile.split(','))
+    else:
+        SequenceOfFiles = generateSequenceOfFiles()
+        Sequence = generateManuscriptSequence(SequenceOfFiles)
+
+    Index = OrderedDict()
+
+    textdoc = OpenDocumentText()
+    textstyles = textdoc.styles
+
+    setupABNT(textdoc.styles)
+
+    Chapter = 0
+    DocumentBody = []
+    CitationList = []
+
+    print("Parsing batch: %s" % Sequence)
+    for FileName in Sequence:
+        Manuscript = open("%s/%s" % (options.ManuscriptDir, FileName)).read()
+        print('Parsing file %s' % FileName)
+        if options.ParseRefs:
+            # Parse Article references;
+
+            Manuscript, CitationData = parseManuscriptReferences(Manuscript)
+
+            CitationList += CitationData
+
+        TextBlocks, S = parseManuscriptFile(Manuscript, ChapterNum=Chapter)
+        Index.update(S)
+        for E in TextBlocks:
+            DocumentBody.append(E)
+        pb = P(stylename='Pagebreak')
+        DocumentBody.append(pb)
+        Chapter += 1
+
+    def mountIndex(Section, IndexBlocks, SubsectionLevel=[]):
+
+        for sectionNumber, sectionName in enumerate(Section.keys()):
+
+            #print(type(Section[k]))
+            nP = P()
+            SPACER = Nt('')
+
+            teletype.addTextToElement(SPACER,
+                                      " " + (" " * 4 * len(SubsectionLevel)))
+            nP.addElement(SPACER)
+
+            print(SubsectionLevel)
+
+            subsectionText = ""
+            currentSubsectionLevel = SubsectionLevel + [sectionNumber + 1]
+            for W in currentSubsectionLevel:
+                subsectionText += ".%i" % W
+
+            subsectionText = subsectionText.strip('.')
+            print(subsectionText)
+            #print(Section)
+            nP.addElement(Nt(subsectionText + sectionName))
+            currentLen = sum([len(str(x)) for x in nP.childNodes])
+            # -- UNDER DEVELOPMENT!;
+            #nP.addElement(Nt('.' * (70-currentLen)))
+            #nP.addElement(Nt('|'))
+
+            IndexBlocks.append(nP)
+
+            if not len(Section[sectionName]):
+                pass
+            else:
+                mountIndex(Section[sectionName], IndexBlocks,
+                           currentSubsectionLevel)
+
+    FullText = DocumentBody
+    if options.RenderSummary:
+        IndexBlocks = [C(Nt('SUMÁRIO'))]
+        mountIndex(Index, IndexBlocks)
+        IndexBlocks.append(P(stylename='Pagebreak'))
+
+        FullText = IndexBlocks + FullText
+
+    if options.RenderCover:
+        try:
+            InfoFile = open("%s/%s" % (options.ManuscriptDir,
+                                       'Info.txt')).read()
+            CoverInfo = eval(InfoFile)
+        except:
+            exit("Info file Fail!\nCheck your Info.txt"+\
+                 "file @ manuscritp folder\nAborting...")
+
+        CoverText = makeFrontFace(CoverInfo)
+        FullText = CoverText + FullText
+
+    if options.ParseRefs:
+        FullText += makeCitationSection(CitationList)
+
+    #Effective text Montage
+    for I in FullText:
+        textdoc.text.addElement(I)
+
+    textdoc.save(options.Filename, True)
