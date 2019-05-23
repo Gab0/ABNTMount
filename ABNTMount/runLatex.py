@@ -45,10 +45,18 @@ def makeBibEntry(ArticleInfo):
                 print(e)
             _Authors.append(A)
         return ' and '.join(_Authors)
+
+    def parseTitle(Title):
+        Quote = '\"'
+        if Quote in Title:
+            Title = Title.replace(Quote, "``", 1)
+            Title = Title.replace(Quote, "''", 1)
+        return Title
+
     entry = [
         "@article{%s," % ArticleInfo['IDs'][0],
         'author = "%s",' % parseAuthors(ArticleInfo['Authors']),
-        'title = "%s",' % ArticleInfo['Title'],
+        'title = "%s",' % parseTitle(ArticleInfo['Title']),
         'year = "%s",' % ArticleInfo['Year'],
         'journal = "%s",' % ArticleInfo['Journal'].replace('&', "\&"),
         #'number = "%s",' % ArticleInfo,
