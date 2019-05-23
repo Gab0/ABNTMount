@@ -11,10 +11,11 @@ from ABNTMount import pdfFilter, citationInfo, runLatex, texFileParser
 
 parser = optparse.OptionParser()
 
-parser.add_option('--dir <DIR>', dest='ManuscriptDir', default=os.getcwd())
-parser.add_option('--name <NAME>', dest='texFileName', default='')
+parser.add_option('-i', "--input", dest='DefinitionsFile', help='Path to .yaml project file.')
+
 parser.add_option('-d', dest='debugMode',
                   action='store_true', default=False)
+
 parser.add_option('--norefs',
                   dest='linkReferences',
                   action='store_false',
@@ -36,9 +37,9 @@ class CacheEncoder(json.JSONEncoder):
             return super(CacheEncoder, self).default(obj)
 
 
-def generateManuscriptSequence(SequenceGuide):
+def generateManuscriptSequence(ManuscriptDirectory, SequenceGuide):
     Sequence = []
-    listOfFiles = os.listdir(options.ManuscriptDir)
+    listOfFiles = os.listdir(ManuscriptDirectory)
 
     def tryFile(TargetQueryName):
         for File in listOfFiles:
@@ -161,21 +162,28 @@ def copyProjectFiles(workingDir, TempPath,
 
 def main():
     # -- Load Project Definitions;
-    definitionsFilepath = os.path.join(options.ManuscriptDir, "Sequence.yaml")
-    projectDefinitions = yaml.load(open(definitionsFilepath).read())
+    if not os.path.isfile(options.DefinitionsFile):
+        print(".yaml project definitions file not found.")
+
+    projectDefinitions = yaml.load(open(options.DefinitionsFile).read())
+
+    ManuscriptDirectory = os.path.dirname(options.DefinitionsFile)
 
     [pretextualSequence, Sequence] = [
-        generateManuscriptSequence(projectDefinitions[Attr])
+        generateManuscriptSequence(ManuscriptDirectory,
+                                   projectDefinitions[Attr])
         for Attr in ["Pretextual", "Textual"]
     ]
 
     TEMPFolderName = "ABNTMTemp"
-    TempPath = os.path.join(options.ManuscriptDir, TEMPFolderName)
+    TempPath = os.path.join(ManuscriptDirectory, TEMPFolderName)
 
-    mainFileName = ''.join(options.texFileName.split('.')[:-1])
+    texFileName = projectDefinitions["BaseTex"]
+    texFilePath = os.path.join(ManuscriptDirectory,
+                               texFileName)
+
+    mainFileName = ''.join(texFileName.split('.')[:-1])
     pdfOutputName = "%s.pdf" % mainFileName
-
-    texFilePath = os.path.join(options.ManuscriptDir, options.texFileName)
 
     if os.path.isdir(TempPath):
         shutil.rmtree(TempPath)
@@ -185,16 +193,16 @@ def main():
     ArticleList = []
 
     # Copy Tables;
-    copyProjectFiles(options.ManuscriptDir, TempPath, "Tables", [".csv"])
+    copyProjectFiles(ManuscriptDirectory, TempPath, "Tables", [".csv"])
 
     # Copy Figures;
-    copyProjectFiles(options.ManuscriptDir, TempPath, "Figures")
+    copyProjectFiles(ManuscriptDirectory, TempPath, "Figures")
 
     # PROCESS SEQUENCE;
     articlesNotFound = []
 
     # Load article cache filepath;
-    ArticleCacheFilepath = os.path.join(options.ManuscriptDir,
+    ArticleCacheFilepath = os.path.join(ManuscriptDirectory,
                                         "ArticleCache.json")
     if os.path.isfile(ArticleCacheFilepath):
         with open(ArticleCacheFilepath) as f:
@@ -203,7 +211,7 @@ def main():
         ArticleCache = {}
 
     for FileName in pretextualSequence + Sequence:
-        Manuscript = open("%s/%s" % (options.ManuscriptDir, FileName)).read()
+        Manuscript = open("%s/%s" % (ManuscriptDirectory, FileName)).read()
         print('Parsing file %s' % FileName)
         if options.linkReferences:
             Manuscript, CitationData, notFound =\
@@ -233,15 +241,15 @@ def main():
                                              Sequence,
                                              projectDefinitions["Parts"])
 
-    open(os.path.join(TempPath, options.texFileName), 'w').write(texFileData)
+    open(os.path.join(TempPath, texFileName), 'w').write(texFileData)
 
     runLatex.runLatex(options,
-                      os.path.join(TempPath, options.texFileName),
+                      os.path.join(TempPath, texFileName),
                       TempPath)
 
     pdfFilter.fromPageContains(
         os.path.join(TempPath, pdfOutputName),
-        os.path.join(options.ManuscriptDir, pdfOutputName),
+        os.path.join(ManuscriptDirectory, pdfOutputName),
         'Resumo'
     )
 
