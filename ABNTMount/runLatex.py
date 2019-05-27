@@ -6,17 +6,21 @@ import subprocess
 
 def runLatex(options, TexPath, WD):
     TexPathBody = TexPath.split('.')[0]
+
+    # Define Commands;
     LatexCMD = ['xelatex', TexPath]
     BIBCMD = ['bibtex', TexPathBody]
     docCMD = ['mk4ht', 'ooxelatex', TexPath]
+    # pandocCMD = ["pandoc", "-s", TexPath, "-o", "%s.txt" % TexPath]
     ENV = os.environ.copy()
     ENV["openout_any"] = "a"
+
     if options.linkReferences:
         commandSequence = [
             LatexCMD,
             BIBCMD,
             LatexCMD,
-            LatexCMD
+            LatexCMD,
             ]
     else:
         commandSequence = [LatexCMD, LatexCMD]
@@ -26,6 +30,7 @@ def runLatex(options, TexPath, WD):
         W = subprocess.Popen(CMD, cwd=WD, env=ENV)
         success = W.wait()
         if options.debugMode:
+            print("%s\n%i" % (" ".join(CMD), success))
             input("Debug: Press enter to continue.")
 
 
