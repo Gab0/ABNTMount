@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from Bio import Entrez
 import copy
+import json
 Entrez.email = "ABNTMount"
 
 
@@ -86,6 +87,13 @@ def getBatchCitationInfo(queries, Verbose=False):
     if Verbose:
         print(searchTerm)
 
+    def getVolume(Article):
+        Data = Article['MedlineCitation']['Article']['Journal']['JournalIssue']
+        if "Volume" in Data.keys():
+            return Data["Volume"]
+        else:
+            return Data["Issue"]
+
     if queries:
         IdQuery = Entrez.esearch(db='pubmed', term=searchTerm, retmax=1666)
         IdQuery = Entrez.read(IdQuery)
@@ -106,18 +114,22 @@ def getBatchCitationInfo(queries, Verbose=False):
 
             Title = Article['MedlineCitation']['Article']['ArticleTitle']
             Title = Title.replace('<i>', '\\textit{').replace('</i>', '}')
-            INFO = {
-                "IDs": BackwardIDs,
-                "Authors": Authors,
-                'Year': Article['PubmedData']['History'][0]['Year'],
-                'Journal':
-                Article['MedlineCitation']['Article']['Journal']['Title'],
-                'JournalInfo': {
-                    'Volume': Article['MedlineCitation']['Article']['Journal']['JournalIssue']['Volume']
-                },
-                'Title': Title,
+            try:
+                INFO = {
+                    "IDs": BackwardIDs,
+                    "Authors": Authors,
+                    'Year': Article['PubmedData']['History'][0]['Year'],
+                    'Journal': Article['MedlineCitation']['Article']['Journal']['Title'],
+                    'JournalInfo': {
+                        'Volume': getVolume(Article)
+                    },
+                    'Title': Title,
             }
 
+            except KeyError as e:
+                print(e)
+                print(json.dumps(Article['MedlineCitation']['Article'], indent=4))
+                exit()
             CitationInfo.append(INFO)
     else:
         CitationInfo = []
