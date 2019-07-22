@@ -35,45 +35,57 @@ def getCitationInfo(query):
     return INFO
 
 
-def getBatchCitationInfo(queries, Verbose=False):
+def loadPreloadedArticleInfo(preloadedArticleInfoPath, queries):
+
+    preloaded = []
+    current_preloaded = []
+
+    if not os.path.isfile(preloadedArticleInfoPath):
+        return [], []
+    preloadedAI = pd.read_csv(preloadedArticleInfoPath)
+
+    def buildAuthors(authorString):
+        a = authorString.split(",")
+        a = [w.strip() for w in a]
+        a = [{
+            "CollectiveName": w
+        } for w in a]
+
+        return a
+
+    preloaded_ids = list(preloadedAI.ID)
+    print(preloaded_ids)
+    for q in queries:
+        if q in preloaded_ids:
+            ID = q
+            info = preloadedAI[preloadedAI.ID == ID].iloc[0]
+            article = {
+                "IDs": [ID],
+                "Authors": buildAuthors(info.Authors),
+                "Year": info.Year,
+                "Title": info.Title,
+                "Journal": info.Journal,
+
+            }
+            preloaded.append(article)
+            print(article)
+            print("PRELOADED!!!")
+            print(q)
+            print(preloadedAI)
+            current_preloaded.append(ID)
+
+    return preloaded, current_preloaded
+
+
+def getBatchCitationInfo(WorkingDirectory, queries, Verbose=False):
     queries = copy.deepcopy(queries)
 
     # read article info from preloaded article info file.
-    preloadedArticleInfoPath = "preloadedArticleInfo.csv"
-    if os.path.isfile(preloadedArticleInfoPath):
-        preloaded = []
-        preloadedAI = pd.read_csv(preloadedArticleInfoPath)
+    preloadedArticleInfoPath = os.path.join(WorkingDirectory,
+                                            "preloadedArticleInfo.csv")
 
-        def buildAuthors(authorString):
-            a = authorString.split(",")
-            a = [w.strip() for w in a]
-            a = [{
-                "CollectiveName": w
-            } for w in a]
-
-            return a
-
-        preloaded_ids = list(preloadedAI.ID)
-        print(preloaded_ids)
-        current_preloaded = []
-        for q in queries:
-            if q in preloaded_ids:
-                ID = q
-                info = preloadedAI[preloadedAI.ID == ID].iloc[0]
-                article = {
-                    "IDs": [ID],
-                    "Authors": buildAuthors(info.Authors),
-                    "Year": info.Year,
-                    "Title": info.Title,
-                    "Journal": info.Journal,
-
-                }
-                preloaded.append(article)
-                print(article)
-                print("PRELOADED!!!")
-                print(q)
-                print(preloadedAI)
-                current_preloaded.append(ID)
+    preloaded, current_preloaded = loadPreloadedArticleInfo(
+        preloadedArticleInfoPath, queries)
 
     # remote PUBMED metadata retriever;
     # prepare search query;
@@ -128,7 +140,8 @@ def getBatchCitationInfo(queries, Verbose=False):
 
             except KeyError as e:
                 print(e)
-                print(json.dumps(Article['MedlineCitation']['Article'], indent=4))
+                print(json.dumps(
+                    Article['MedlineCitation']['Article'], indent=4))
                 exit()
             CitationInfo.append(INFO)
     else:
