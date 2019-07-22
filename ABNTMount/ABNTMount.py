@@ -5,13 +5,15 @@ import re
 import optparse
 import os
 import json
+import itertools
 import numpy as np
 
 from ABNTMount import pdfFilter, citationInfo, runLatex, texFileParser
 
 parser = optparse.OptionParser()
 
-parser.add_option('-i', "--input", dest='DefinitionsFile', help='Path to .yaml project file.')
+parser.add_option('-i', "--input",
+                  dest='DefinitionsFile', help='Path to .yaml project file.')
 
 parser.add_option('-d', dest='debugMode',
                   action='store_true', default=False)
@@ -21,6 +23,9 @@ parser.add_option('--norefs',
                   action='store_false',
                   default=True)
 
+parser.add_option('--sc',
+                  dest='skipCover',
+                  action="store_true")
 
 options, args = parser.parse_args()
 
@@ -78,10 +83,21 @@ def generateManuscriptSequence(ManuscriptDirectory, SequenceGuide):
     return Sequence
 
 
-def parseManuscriptReferences(Manuscript, ArticleCache):
-    searchPattern = "<*\[\[[\w./-]+\]\]"
+def parseManuscriptReferences(WorkingDirectory,
+                              Manuscript, ArticleCache, projectDefinitions):
+
+    CitationCommands = [
+        "cite",
+        "citeonline",
+        "footfullcite"
+    ]
+    if "Citation" in projectDefinitions.keys():
+        for c, Citation in enumerate(projectDefinitions["Citation"]):
+            CitationCommands[c] = Citation
+
+    searchPattern = "<*V*\[\[[\w./-]+\]\]"
     ArticleText = re.findall(searchPattern, Manuscript)
-    ArticleIds = [x.strip("<").strip("[").strip("]") for x in ArticleText]
+    ArticleIds = [x.strip("<V[]") for x in ArticleText]
 
     notFound = []
     if not ArticleIds:
@@ -97,6 +113,7 @@ def parseManuscriptReferences(Manuscript, ArticleCache):
     if MissingArticles:
         print(MissingArticles)
         MissingArticleResults = citationInfo.getBatchCitationInfo(
+            WorkingDirectory,
             MissingArticles,
             Verbose=True)
     else:
@@ -108,30 +125,41 @@ def parseManuscriptReferences(Manuscript, ArticleCache):
 
     # Build article info results from Cache and from remote PUBMED;
     ArticleInfoResults = []
+    DummyInfoResults = []
     for ArticleId in ArticleIds:
+        onMissing = [
+            A for A in MissingArticleResults
+            if ArticleId in A["IDs"]
+        ]
         if ArticleId in ArticleCache.keys():
             ArticleInfoResults.append(ArticleCache[ArticleId])
+        elif onMissing:
+            ArticleInfoResults.append(onMissing[0])
         else:
-            ArticleInfoResults.append([
-                A for A in MissingArticleResults
-                if ArticleId in A["IDs"]][0])
+            DummyInfoResults.append({"IDs": [ArticleId]})
 
     articleTextIds = zip(ArticleText, ArticleIds)
     for TEXT in articleTextIds:
         print("%s\t%s" % (TEXT[0], TEXT[1]))
+
     print("Expanding References %i/%i" % (len(ArticleInfoResults),
                                           len(ArticleIds)))
 
     for z in range(len(ArticleText)):
         Found = False
-        for AINFO in ArticleInfoResults:
+        for AINFO in ArticleInfoResults + DummyInfoResults:
             if ArticleIds[z] in AINFO['IDs']:
-                if "<" in ArticleText[z]:
-                    Replacement = '\citeonline{%s}' % AINFO['IDs'][0]
-                else:
-                    Replacement = '\cite{%s}' % AINFO['IDs'][0]
-                    # print("< not in %s." % ArticleText[z])
 
+                if "<" in ArticleText[z]:
+                    TexCommand = '\%s' % CitationCommands[1]
+                elif "V" in ArticleText[z]:
+                    TexCommand = '\%s' % CitationCommands[2]
+                else:
+                    TexCommand = '\%s' % CitationCommands[0]
+
+                TexCommand += "{%s}"
+
+                Replacement = TexCommand % AINFO['IDs'][0]
                 Manuscript = Manuscript.replace(ArticleText[z],
                                                 Replacement, 1)
                 Found = True
@@ -140,6 +168,8 @@ def parseManuscriptReferences(Manuscript, ArticleCache):
         if not Found:
             notFound.append(ArticleIds[z])
             print("NOT FOUND %s" % ArticleIds[z])
+
+    Manuscript += "\clearpage"
 
     return Manuscript, ArticleInfoResults, notFound
 
@@ -156,8 +186,9 @@ def copyProjectFiles(workingDir, TempPath,
                     continue
 
             Path = os.path.join(subdirectoryPath, F)
-            Target = os.path.join(TempPath, F)
-            shutil.copy2(Path, Target)
+            if os.path.isfile(Path):
+                Target = os.path.join(TempPath, F)
+                shutil.copy2(Path, Target)
 
 
 def main():
@@ -165,16 +196,42 @@ def main():
     if not os.path.isfile(options.DefinitionsFile):
         print(".yaml project definitions file not found.")
 
+    ExternalFiles = {
+        "DefinitionsFile": "Sequence.yaml",
+        "UserBIBEntries": "baseBibtex.bib",
+        "UserCSVArticles": "preloadedArticleInfo.csv"
+    }
+
     projectDefinitions = yaml.load(open(options.DefinitionsFile).read())
 
-    ManuscriptDirectory = os.path.dirname(options.DefinitionsFile)
+    ManuscriptDirectory = os.path.dirname(
+        os.path.realpath(options.DefinitionsFile)
+    )
 
-    [pretextualSequence, Sequence] = [
-        generateManuscriptSequence(ManuscriptDirectory,
-                                   projectDefinitions[Attr])
-        for Attr in ["Pretextual", "Textual"]
-    ]
+    # Load segment data from definitions file;
+    segmentNames = ["Textual", "Pretextual"]
+    segmentSequences = []
+    segmentParts = []
 
+    for segmentName in segmentNames:
+        sequences = []
+        parts = []
+        if segmentName in projectDefinitions.keys():
+            sequences = generateManuscriptSequence(
+                ManuscriptDirectory,
+                projectDefinitions[segmentName]
+            )
+            partsKey = segmentName + "Parts"
+            if partsKey in projectDefinitions.keys():
+                parts = projectDefinitions[partsKey]
+        segmentSequences.append(sequences)
+        segmentParts.append(parts)
+
+    if options.debugMode:
+        print(json.dumps(segmentSequences, indent=2))
+        input()
+
+    # Manage temporary files folder;
     TEMPFolderName = "ABNTMTemp"
     TempPath = os.path.join(ManuscriptDirectory, TEMPFolderName)
 
@@ -187,16 +244,22 @@ def main():
 
     if os.path.isdir(TempPath):
         shutil.rmtree(TempPath)
+
     os.mkdir(TempPath)
 
     assert(os.path.isfile(texFilePath))
     ArticleList = []
 
     # Copy Tables;
-    copyProjectFiles(ManuscriptDirectory, TempPath, "Tables", [".csv"])
+    if "Files" in projectDefinitions.keys():
+        FileSpecifiers = projectDefinitions["Files"]
+        for FileSpecifier in FileSpecifiers:
+            if FileSpecifier.startswith("*"):
+                copyProjectFiles(ManuscriptDirectory,
+                                 TempPath, "", [FileSpecifier.strip("*")])
+            else:
+                copyProjectFiles(ManuscriptDirectory, TempPath, FileSpecifier)
 
-    # Copy Figures;
-    copyProjectFiles(ManuscriptDirectory, TempPath, "Figures")
 
     # PROCESS SEQUENCE;
     articlesNotFound = []
@@ -210,48 +273,86 @@ def main():
     else:
         ArticleCache = {}
 
-    for FileName in pretextualSequence + Sequence:
+    allContentFiles = [[texFileName]] + segmentSequences
+    print(allContentFiles)
+    for FileName in itertools.chain(*allContentFiles):
         Manuscript = open("%s/%s" % (ManuscriptDirectory, FileName)).read()
         print('Parsing file %s' % FileName)
         if options.linkReferences:
             Manuscript, CitationData, notFound =\
-                parseManuscriptReferences(Manuscript, ArticleCache)
+                parseManuscriptReferences(ManuscriptDirectory,
+                                          Manuscript,
+                                          ArticleCache,
+                                          projectDefinitions)
             articlesNotFound += notFound
         else:
             CitationData = []
 
         ArticleList += CitationData
 
-        output = open(TempPath+'/'+FileName, 'w')
+        outputPath = TempPath + '/' + FileName
+        if options.debugMode:
+            print("%s -> %s" % (FileName, outputPath))
+
+        output = open(outputPath, 'w')
         output.write(Manuscript)
+        output.close()
         print("\n\n")
 
     json.dump(ArticleCache,
               open(ArticleCacheFilepath, 'w'),
               indent=2,
               cls=CacheEncoder)
+    if options.debugMode:
+        input()
 
+    # -- BUILD BIBTEX CITAITON INFO;
     BIBFile = [runLatex.makeBibEntry(A) for A in ArticleList]
     BIBFile = '\n\n'.join(BIBFile)
-    open(TempPath+'/references.bib', 'w').write(BIBFile)
+
+    # -- parse base bib info;
+    BaseBIBPath = os.path.join(ManuscriptDirectory, "baseBibtex.bib")
+    if os.path.isfile(BaseBIBPath):
+        BaseBIBFile = open(BaseBIBPath).read() + "\n\n"
+        BIBFile = BaseBIBFile + BIBFile
+
+    if "BIBFile" in projectDefinitions.keys():
+        BIBFileName = projectDefinitions["BIBFile"]
+    else:
+        BIBFileName = "references.bib"
+    BIBFilePath = os.path.join(TempPath, BIBFileName)
+    open(BIBFilePath, 'w').write(BIBFile)
 
     # -- Parse and write tex file;
-    texFileData = texFileParser.parseTexFile(texFilePath,
-                                             pretextualSequence,
-                                             Sequence,
-                                             projectDefinitions["Parts"])
+    replacementTokens = [
+        "%<<CHAPTER-CONTENT>>",
+        "%<<PRETEXTUAL-CONTENT>>"
+    ]
 
-    open(os.path.join(TempPath, texFileName), 'w').write(texFileData)
+    TempTexFilePath = os.path.join(TempPath, texFileName)
+    texFileData = texFileParser.parseTexFile(TempTexFilePath,
+                                             segmentSequences,
+                                             replacementTokens,
+                                             segmentParts)
+
+    open(TempTexFilePath, 'w').write(texFileData)
 
     runLatex.runLatex(options,
                       os.path.join(TempPath, texFileName),
                       TempPath)
 
-    pdfFilter.fromPageContains(
-        os.path.join(TempPath, pdfOutputName),
-        os.path.join(ManuscriptDirectory, pdfOutputName),
-        'Resumo'
-    )
+    TempOutput = os.path.join(TempPath, pdfOutputName)
+
+    FinalOutput = os.path.join(ManuscriptDirectory, pdfOutputName)
+
+    if options.skipCover:
+        pdfFilter.fromPageContains(
+            TempOutput,
+            FinalOutput,
+            'Resumo'
+        )
+    else:
+        shutil.copy2(TempOutput, FinalOutput)
 
     if not options.debugMode:
         shutil.rmtree(TempPath)
