@@ -4,7 +4,7 @@ from setuptools import setup
 setup(
     name='ABNTMount',
     author="Gab0",
-    version='0.4',
+    version='0.5',
     packages=['ABNTMount'],
     license='GPLv2',
     long_description=open('README.md').read(),
