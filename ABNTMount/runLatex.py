@@ -21,6 +21,8 @@ def runLatex(options, TexPath, WD):
             BIBCMD,
             LatexCMD,
             LatexCMD,
+            LatexCMD,
+            LatexCMD
             ]
     else:
         commandSequence = [LatexCMD, LatexCMD]
