@@ -1,4 +1,5 @@
 #!/bin/python
+
 import yaml
 import shutil
 import re
@@ -10,24 +11,31 @@ import numpy as np
 
 from ABNTMount import pdfFilter, citationInfo, runLatex, texFileParser
 
-parser = optparse.OptionParser()
 
-parser.add_option('-i', "--input",
-                  dest='DefinitionsFile', help='Path to .yaml project file.')
+def parseArguments():
+    parser = optparse.OptionParser()
 
-parser.add_option('-d', dest='debugMode',
-                  action='store_true', default=False)
+    parser.add_option('-i', "--input",
+                      dest='DefinitionsFile', help='Path to .yaml project file.')
 
-parser.add_option('--norefs',
-                  dest='linkReferences',
-                  action='store_false',
-                  default=True)
+    parser.add_option('-d', dest='debugMode',
+                      action='store_true', default=False)
 
-parser.add_option('--sc',
-                  dest='skipCover',
-                  action="store_true")
+    parser.add_option('--norefs',
+                      dest='linkReferences',
+                      action='store_false',
+                      default=True)
 
-options, args = parser.parse_args()
+    parser.add_option('--sc',
+                      dest='skipCover',
+                      action="store_true")
+
+    parser.add_option('--bib',
+                      dest="OnlyBib",
+                      action='store_true')
+
+    options, args = parser.parse_args()
+    return options
 
 
 class CacheEncoder(json.JSONEncoder):
@@ -84,7 +92,9 @@ def generateManuscriptSequence(ManuscriptDirectory, SequenceGuide):
 
 
 def parseManuscriptReferences(WorkingDirectory,
-                              Manuscript, ArticleCache, projectDefinitions):
+                              Manuscript,
+                              ArticleCache,
+                              projectDefinitions):
 
     CitationCommands = [
         "cite",
@@ -95,9 +105,23 @@ def parseManuscriptReferences(WorkingDirectory,
         for c, Citation in enumerate(projectDefinitions["Citation"]):
             CitationCommands[c] = Citation
 
-    searchPattern = "<*V*\[\[[\w./-]+\]\]"
+    if "citation_pattern" in projectDefinitions.keys():
+        Pattern = projectDefinitions["citation_pattern"]
+    else:
+        Pattern = "abntm"
+
+    if Pattern == "abntm":
+        searchPattern = "<*V*\[\[[\w./-]+\]\]"
+        searchStrip = "<V[]"
+        rebuildID = lambda i: i
+
+    elif Pattern == "md":
+        searchPattern = "\[@[\w./-]+\]"
+        searchStrip = "[@]"
+        rebuildID = lambda i: "[@%s]" % i
+
     ArticleText = re.findall(searchPattern, Manuscript)
-    ArticleIds = [x.strip("<V[]") for x in ArticleText]
+    ArticleIds = [x.strip(searchStrip) for x in ArticleText]
 
     notFound = []
     if not ArticleIds:
@@ -159,7 +183,7 @@ def parseManuscriptReferences(WorkingDirectory,
 
                 TexCommand += "{%s}"
 
-                Replacement = TexCommand % AINFO['IDs'][0]
+                Replacement = TexCommand % rebuildID(AINFO['IDs'][0])
                 Manuscript = Manuscript.replace(ArticleText[z],
                                                 Replacement, 1)
                 Found = True
@@ -191,7 +215,30 @@ def copyProjectFiles(workingDir, TempPath,
                 shutil.copy2(Path, Target)
 
 
+def makeBib(options):
+    projectDefinitions = {
+        "citation_pattern": "md"
+    }
+
+    Manuscript = open(options.DefinitionsFile).read()
+    Manuscript, ArticleData, notFound =\
+        parseManuscriptReferences(".",
+                                  Manuscript,
+                                  {},
+                                  projectDefinitions)
+
+    citationInfo.CreateBibtextFile("document.bib", None, ArticleData)
+
+
 def main():
+    options = parseArguments()
+    if options.OnlyBib:
+        makeBib(options)
+    else:
+        buildProjectWithDefinitions(options)
+
+
+def buildProjectWithDefinitions(options):
     # -- Load Project Definitions;
     if not os.path.isfile(options.DefinitionsFile):
         print(".yaml project definitions file not found.")
@@ -248,7 +295,6 @@ def main():
     os.mkdir(TempPath)
 
     assert(os.path.isfile(texFilePath))
-    ArticleList = []
 
     # Copy Tables;
     if "Files" in projectDefinitions.keys():
@@ -263,6 +309,7 @@ def main():
 
     # PROCESS SEQUENCE;
     articlesNotFound = []
+    ArticleList = []
 
     # Load article cache filepath;
     ArticleCacheFilepath = os.path.join(ManuscriptDirectory,
@@ -276,7 +323,8 @@ def main():
     allContentFiles = [[texFileName]] + segmentSequences
     print(allContentFiles)
     for FileName in itertools.chain(*allContentFiles):
-        Manuscript = open("%s/%s" % (ManuscriptDirectory, FileName)).read()
+        ManuscriptPath = os.path.join(ManuscriptDirectory, FileName)
+        Manuscript = open(ManuscriptPath).read()
         print('Parsing file %s' % FileName)
         if options.linkReferences:
             Manuscript, CitationData, notFound =\
@@ -306,22 +354,15 @@ def main():
     if options.debugMode:
         input()
 
-    # -- BUILD BIBTEX CITAITON INFO;
-    BIBFile = [runLatex.makeBibEntry(A) for A in ArticleList]
-    BIBFile = '\n\n'.join(BIBFile)
-
-    # -- parse base bib info;
-    BaseBIBPath = os.path.join(ManuscriptDirectory, "baseBibtex.bib")
-    if os.path.isfile(BaseBIBPath):
-        BaseBIBFile = open(BaseBIBPath).read() + "\n\n"
-        BIBFile = BaseBIBFile + BIBFile
-
     if "BIBFile" in projectDefinitions.keys():
         BIBFileName = projectDefinitions["BIBFile"]
     else:
         BIBFileName = "references.bib"
+
     BIBFilePath = os.path.join(TempPath, BIBFileName)
-    open(BIBFilePath, 'w').write(BIBFile)
+    citationInfo.CreateBibtextFile(BIBFilePath,
+                                   ManuscriptDirectory, ArticleList)
+
 
     # -- Parse and write tex file;
     replacementTokens = [

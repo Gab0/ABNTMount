@@ -7,6 +7,8 @@ import copy
 import json
 Entrez.email = "ABNTMount"
 
+from ABNTMount import runLatex
+
 
 def getCitationInfo(query):
     W = Entrez.esearch(db='pubmed', term=query, retmax=1666)
@@ -148,3 +150,19 @@ def getBatchCitationInfo(WorkingDirectory, queries, Verbose=False):
         CitationInfo = []
 
     return CitationInfo + preloaded
+
+
+def CreateBibtextFile(BIBFilePath, ManuscriptDirectory, ArticleList):
+    # -- BUILD BIBTEX CITAITON INFO;
+    BIBFile = [runLatex.makeBibEntry(A) for A in ArticleList]
+    BIBFile = '\n\n'.join(BIBFile)
+
+    # -- parse base bib info;
+    if ManuscriptDirectory is not None:
+        BaseBIBPath = os.path.join(ManuscriptDirectory, "baseBibtex.bib")
+        if os.path.isfile(BaseBIBPath):
+            BaseBIBFile = open(BaseBIBPath).read() + "\n\n"
+            BIBFile = BaseBIBFile + BIBFile
+
+    with open(BIBFilePath, 'w') as f:
+        f.write(BIBFile)
