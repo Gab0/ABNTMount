@@ -105,49 +105,53 @@ def getBatchCitationInfo(WorkingDirectory, queries, Verbose=False):
         Data = Article['MedlineCitation']['Article']['Journal']['JournalIssue']
         if "Volume" in Data.keys():
             return Data["Volume"]
-        else:
+        elif "Issue" in Data.keys():
             return Data["Issue"]
+        else:
+            return ""
 
-    if queries:
-        IdQuery = Entrez.esearch(db='pubmed', term=searchTerm, retmax=1666)
-        IdQuery = Entrez.read(IdQuery)
-        IdList = IdQuery['IdList']
-        if Verbose:
-            print("IdList of %i" % len(IdList))
+    if not queries:
+        return preloaded
 
-        W = Entrez.efetch(db='pubmed', id=IdList, rettype='xml')
-        W = Entrez.read(W)
+    IdQuery = Entrez.esearch(db='pubmed', term=searchTerm, retmax=3666)
+    IdQuery = Entrez.read(IdQuery)
+    IdList = IdQuery['IdList']
+    if Verbose:
+        print("IdList of %i" % len(IdList))
 
-        CitationInfo = []
-        for A, Article in enumerate(W['PubmedArticle']):
-            Authors = Article['MedlineCitation']['Article']['AuthorList']
-            # Authors = ["%s, %s" % (x['LastName'], x['Initials']) for x in Authors]
-            # Authors = '; '.join(Authors)
-            BackwardIDs = Article['PubmedData']['ArticleIdList']
-            BackwardIDs = [str(x) for x in BackwardIDs]
+    W = Entrez.efetch(db='pubmed', id=IdList, rettype='xml')
+    W = Entrez.read(W)
 
-            Title = Article['MedlineCitation']['Article']['ArticleTitle']
-            Title = Title.replace('<i>', '\\textit{').replace('</i>', '}')
-            try:
-                INFO = {
-                    "IDs": BackwardIDs,
-                    "Authors": Authors,
-                    'Year': Article['PubmedData']['History'][0]['Year'],
-                    'Journal': Article['MedlineCitation']['Article']['Journal']['Title'],
-                    'JournalInfo': {
-                        'Volume': getVolume(Article)
-                    },
-                    'Title': Title,
+    CitationInfo = []
+    for A, Article in enumerate(W['PubmedArticle']):
+        Authors = Article['MedlineCitation']['Article']['AuthorList']
+        # Authors = ["%s, %s" % (x['LastName'], x['Initials']) for x in Authors]
+        # Authors = '; '.join(Authors)
+        BackwardIDs = Article['PubmedData']['ArticleIdList']
+        BackwardIDs = [str(x) for x in BackwardIDs]
+
+        Title = Article['MedlineCitation']['Article']['ArticleTitle']
+        Title = Title.replace('<i>', '\\textit{').replace('</i>', '}')
+
+        try:
+            INFO = {
+                "IDs": BackwardIDs,
+                "Authors": Authors,
+                'Year': Article['PubmedData']['History'][0]['Year'],
+                'Journal': Article['MedlineCitation']['Article']['Journal']['Title'],
+                'JournalInfo': {
+                    'Volume': getVolume(Article)
+                },
+                'Title': Title,
             }
 
-            except KeyError as e:
-                print(e)
-                print(json.dumps(
-                    Article['MedlineCitation']['Article'], indent=4))
-                exit()
-            CitationInfo.append(INFO)
-    else:
-        CitationInfo = []
+        except KeyError as e:
+            print(e)
+            print(json.dumps(
+                Article['MedlineCitation']['Article'], indent=4))
+            print("ERROR!")
+            exit()
+        CitationInfo.append(INFO)
 
     return CitationInfo + preloaded
 

@@ -101,6 +101,7 @@ def parseManuscriptReferences(WorkingDirectory,
         "citeonline",
         "footfullcite"
     ]
+
     if "Citation" in projectDefinitions.keys():
         for c, Citation in enumerate(projectDefinitions["Citation"]):
             CitationCommands[c] = Citation
@@ -111,17 +112,27 @@ def parseManuscriptReferences(WorkingDirectory,
         Pattern = "abntm"
 
     if Pattern == "abntm":
-        searchPattern = "<*V*\[\[[\w./-]+\]\]"
-        searchStrip = "<V[]"
+        searchPattern = r"<*V*\[\[[\w./-]+\]\]"
+        searchStrip = "<V[ ]"
         rebuildID = lambda i: i
 
     elif Pattern == "md":
-        searchPattern = "\[@[\w./-]+\]"
-        searchStrip = "[@]"
+        searchPattern = r"\[@[@\w./-; ]+\]"
+        searchStrip = "[@ ]"
         rebuildID = lambda i: "[@%s]" % i
 
+    def ArticleIDFromText(Text, searchStrip):
+        IDs = Text.split(";")
+        return [ID.strip(searchStrip) for ID in IDs]
+
     ArticleText = re.findall(searchPattern, Manuscript)
-    ArticleIds = [x.strip(searchStrip) for x in ArticleText]
+
+    def flatten(l):
+        print(l)
+        return [item for sublist in l for item in sublist]
+
+    ArticleIds = flatten([ArticleIDFromText(Text, searchStrip)
+                          for Text in ArticleText])
 
     notFound = []
     if not ArticleIds:
@@ -169,6 +180,7 @@ def parseManuscriptReferences(WorkingDirectory,
     print("Expanding References %i/%i" % (len(ArticleInfoResults),
                                           len(ArticleIds)))
 
+    print(DummyInfoResults)
     for z in range(len(ArticleText)):
         Found = False
         for AINFO in ArticleInfoResults + DummyInfoResults:
