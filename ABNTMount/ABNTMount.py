@@ -120,6 +120,7 @@ def parseManuscriptReferences(WorkingDirectory,
         searchPattern = r"\[@[@\w./-; ]+\]"
         searchStrip = "[@ ]"
         rebuildID = lambda i: "[@%s]" % i
+        rebuildID = lambda i: i
 
     def ArticleIDFromText(Text, searchStrip):
         IDs = Text.split(";")

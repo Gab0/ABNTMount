@@ -1,13 +1,14 @@
 #!/bin/python
 
 import os
-import pandas as pd
-from Bio import Entrez
 import copy
 import json
-Entrez.email = "ABNTMount"
+import pandas as pd
+from Bio import Entrez
 
 from ABNTMount import runLatex
+
+Entrez.email = "ABNTMount"
 
 
 def getCitationInfo(query):
@@ -92,8 +93,8 @@ def getBatchCitationInfo(WorkingDirectory, queries, Verbose=False):
     # remote PUBMED metadata retriever;
     # prepare search query;
     queries = [q for q in queries if q not in current_preloaded]
-    for q in range(len(queries)):
-        if queries[q].isdigit():
+    for q, query in enumerate(queries):
+        if query.isdigit():
             queries[q] += '[uid]'
 
     searchTerm = ' OR '.join(queries)
