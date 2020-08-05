@@ -1,5 +1,12 @@
 #!/bin/python
 
+"""
+
+Fetch article information from PUBMED.
+
+"""
+
+import sys
 import os
 import copy
 import json
@@ -17,7 +24,7 @@ def getCitationInfo(query):
     IdList = A['IdList']
     if A['Count'] != '1':
         print(A)
-        exit("Search for article named as %s failed!" % query)
+        sys.exit("Search for article named as %s failed!" % query)
 
     W = Entrez.efetch(db='pubmed', id=IdList, rettype='xml')
     W = Entrez.read(W)
@@ -27,7 +34,7 @@ def getCitationInfo(query):
     # Authors = ["%s, %s" % (x['LastName'], x['Initials']) for x in Authors]
     # Authors = '; '.join(Authors)
     print(W['MedlineCitation']['Article'])
-    exit()
+    sys.exit()
     INFO = {
         "Authors": Authors,
         'Year': W['PubmedData']['History'][0]['Year'],
@@ -102,15 +109,6 @@ def getBatchCitationInfo(WorkingDirectory, queries, Verbose=False):
     if Verbose:
         print(searchTerm)
 
-    def getVolume(Article):
-        Data = Article['MedlineCitation']['Article']['Journal']['JournalIssue']
-        if "Volume" in Data.keys():
-            return Data["Volume"]
-        elif "Issue" in Data.keys():
-            return Data["Issue"]
-        else:
-            return ""
-
     if not queries:
         return preloaded
 
@@ -123,38 +121,48 @@ def getBatchCitationInfo(WorkingDirectory, queries, Verbose=False):
     W = Entrez.efetch(db='pubmed', id=IdList, rettype='xml')
     W = Entrez.read(W)
 
-    CitationInfo = []
-    for A, Article in enumerate(W['PubmedArticle']):
-        Authors = Article['MedlineCitation']['Article']['AuthorList']
-        # Authors = ["%s, %s" % (x['LastName'], x['Initials']) for x in Authors]
-        # Authors = '; '.join(Authors)
-        BackwardIDs = Article['PubmedData']['ArticleIdList']
-        BackwardIDs = [str(x) for x in BackwardIDs]
+    return list(map(parseArticle, W['PubmedArticle'])) + preloaded
 
-        Title = Article['MedlineCitation']['Article']['ArticleTitle']
-        Title = Title.replace('<i>', '\\textit{').replace('</i>', '}')
 
-        try:
-            INFO = {
-                "IDs": BackwardIDs,
-                "Authors": Authors,
-                'Year': Article['PubmedData']['History'][0]['Year'],
-                'Journal': Article['MedlineCitation']['Article']['Journal']['Title'],
-                'JournalInfo': {
-                    'Volume': getVolume(Article)
-                },
-                'Title': Title,
-            }
+def parseArticle(Article):
+    def getVolume(Article):
+        Data = Article['MedlineCitation']['Article']['Journal']['JournalIssue']
+        if "Volume" in Data.keys():
+            return Data["Volume"]
+        if "Issue" in Data.keys():
+            return Data["Issue"]
+        return ""
 
-        except KeyError as e:
-            print(e)
-            print(json.dumps(
-                Article['MedlineCitation']['Article'], indent=4))
-            print("ERROR!")
-            exit()
-        CitationInfo.append(INFO)
+    Authors = Article['MedlineCitation']['Article']['AuthorList']
+    # Authors = ["%s, %s" % (x['LastName'], x['Initials']) for x in Authors]
+    # Authors = '; '.join(Authors)
+    BackwardIDs = Article['PubmedData']['ArticleIdList']
+    BackwardIDs = [str(x) for x in BackwardIDs]
 
-    return CitationInfo + preloaded
+    Title = Article['MedlineCitation']['Article']['ArticleTitle']
+    Title = Title.replace('<i>', '\\textit{').replace('</i>', '}')
+
+    try:
+        INFO = {
+            "IDs": BackwardIDs,
+            "Authors": Authors,
+            'Year': Article['PubmedData']['History'][0]['Year'],
+            'Journal':
+            Article['MedlineCitation']['Article']['Journal']['Title'],
+            'JournalInfo': {
+                'Volume': getVolume(Article)
+            },
+            'Title': Title,
+        }
+
+    except KeyError as e:
+        print(e)
+        print(json.dumps(
+            Article['MedlineCitation']['Article'], indent=4))
+        print("ERROR!")
+        sys.exit()
+
+    return INFO
 
 
 def CreateBibtextFile(BIBFilePath, ManuscriptDirectory, ArticleList):
