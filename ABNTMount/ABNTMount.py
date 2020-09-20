@@ -212,20 +212,34 @@ def parseManuscriptReferences(WorkingDirectory,
 
 
 def copyProjectFiles(workingDir, TempPath,
-                     subdirectory, allowedExtensions=[]):
+                     subdirectory, allowedExtensions=[], Verbose=True):
 
-    subdirectoryPath = os.path.join(workingDir, subdirectory)
-    if os.path.isdir(subdirectoryPath):
-        Files = os.listdir(subdirectoryPath)
-        for F in Files:
+    def searchDirectory(workingDir, subdirectory):
+        Path = os.path.join(workingDir, subdirectory)
+        if os.path.isdir(Path):
+            Files = os.listdir(Path)
+            for File in Files:
+                new_subdir = os.path.join(subdirectory, File)
+                searchDirectory(workingDir, new_subdir)
+
+        elif os.path.isfile(Path):
             if allowedExtensions:
-                if os.path.splitext(F)[-1] not in allowedExtensions:
-                    continue
+                if os.path.splitext(Path)[-1] not in allowedExtensions:
+                    return
+            fname = os.path.split(Path)[-1]
+            Target = os.path.join(TempPath, fname)
+            if Verbose:
+                print("Copying file %s to %s" % (Path, Target))
+            shutil.copy2(Path, Target)
 
-            Path = os.path.join(subdirectoryPath, F)
-            if os.path.isfile(Path):
-                Target = os.path.join(TempPath, F)
-                shutil.copy2(Path, Target)
+    if subdirectory.startswith("$"):
+        subdirectory = subdirectory.strip("$")
+        Source = os.path.join(workingDir, subdirectory)
+        Target = os.path.join(TempPath, subdirectory)
+        shutil.copytree(Source, Target)
+
+    else:
+        searchDirectory(workingDir, subdirectory)
 
 
 def makeBib(options):
@@ -262,7 +276,10 @@ def buildProjectWithDefinitions(options):
         "UserCSVArticles": "preloadedArticleInfo.csv"
     }
 
-    projectDefinitions = yaml.load(open(options.DefinitionsFile).read())
+    projectDefinitions = yaml.load(
+        open(options.DefinitionsFile).read(),
+        Loader=yaml.SafeLoader
+    )
 
     ManuscriptDirectory = os.path.dirname(
         os.path.realpath(options.DefinitionsFile)
