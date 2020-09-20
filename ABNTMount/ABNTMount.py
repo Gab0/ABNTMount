@@ -236,6 +236,9 @@ def copyProjectFiles(workingDir, TempPath,
         subdirectory = subdirectory.strip("$")
         Source = os.path.join(workingDir, subdirectory)
         Target = os.path.join(TempPath, subdirectory)
+        if Verbose:
+            print("Copying tree %s to %s" % (Source, Target))
+
         shutil.copytree(Source, Target)
 
     else:
