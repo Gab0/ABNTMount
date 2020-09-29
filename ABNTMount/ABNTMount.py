@@ -34,6 +34,10 @@ def parseArguments():
                       dest="OnlyBib",
                       action='store_true')
 
+    parser.add_option('--latex',
+                      dest="LatexExecutable",
+                      default='xelatex')
+
     options, args = parser.parse_args()
     return options
 

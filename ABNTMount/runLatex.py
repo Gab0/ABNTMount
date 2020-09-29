@@ -8,7 +8,7 @@ def runLatex(options, TexPath, WD):
     TexPathBody = TexPath.split('.')[0]
 
     # Define Commands;
-    LatexCMD = ['xelatex', TexPath]
+    LatexCMD = [options.LatexExecutable, TexPath]
     BIBCMD = ['bibtex', TexPathBody]
     docCMD = ['mk4ht', 'ooxelatex', TexPath]
     # pandocCMD = ["pandoc", "-s", TexPath, "-o", "%s.txt" % TexPath]
@@ -18,12 +18,9 @@ def runLatex(options, TexPath, WD):
     if options.linkReferences:
         commandSequence = [
             LatexCMD,
-            BIBCMD,
-            LatexCMD,
-            LatexCMD,
-            LatexCMD,
-            LatexCMD
-            ]
+            BIBCMD
+        ] + [LatexCMD] * 4
+
     else:
         commandSequence = [LatexCMD, LatexCMD]
     if False:
