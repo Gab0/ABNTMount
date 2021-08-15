@@ -75,9 +75,10 @@ def generateManuscriptSequence(ManuscriptDirectory, SequenceGuide):
         return None
 
     def extract_file_index(BaseName, fname):
-        Q = re.findall(BaseName + "([\d\.]+)_", fname)
+        Q = re.findall(BaseName + r"([\d\.]+)_", fname)
         if Q:
             return float(Q[0])
+        return None
 
     def search_numbered_files(listOfFiles, BaseName):
         ext = lambda x: extract_file_index(BaseName, x)
@@ -86,7 +87,6 @@ def generateManuscriptSequence(ManuscriptDirectory, SequenceGuide):
         for F in sorted(validFiles, key=ext):
             yield F
             #print(f"Warning! Repeated indexed file of BaseName{v}! Recheck your files.")
-
 
     for F in SequenceGuide:
         if '{*}' in F:
@@ -102,8 +102,6 @@ def generateManuscriptSequence(ManuscriptDirectory, SequenceGuide):
                 exit()
 
     return Sequence
-
-
 
 def copyProjectFiles(workingDir, TempPath,
                      subdirectory, allowedExtensions=[], Verbose=True):
@@ -225,9 +223,14 @@ def buildProjectWithDefinitions(options):
 
     assert(os.path.isfile(texFilePath))
 
-    # Copy Tables;
+    texFiles = [
+        f for f in os.listdir(ManuscriptDirectory)
+        if f.endswith(".tex")
+    ]
+
+    # Copy all files used in the project;
     if "Files" in projectDefinitions.keys():
-        FileSpecifiers = projectDefinitions["Files"]
+        FileSpecifiers = projectDefinitions["Files"] + texFiles
         for FileSpecifier in FileSpecifiers:
             if FileSpecifier.startswith("*"):
                 copyProjectFiles(ManuscriptDirectory,
@@ -248,23 +251,33 @@ def buildProjectWithDefinitions(options):
     else:
         ArticleCache = {}
 
-    allContentFiles = [[texFileName]] + segmentSequences
-    print(allContentFiles)
-    for FileName in itertools.chain(*allContentFiles):
-        ManuscriptPath = os.path.join(ManuscriptDirectory, FileName)
-        Manuscript = open(ManuscriptPath).read()
-        print('Parsing file %s' % FileName)
-        if options.linkReferences:
-            Manuscript, CitationData, notFound =\
-                bibParser.parseManuscriptReferences(
-                    ManuscriptDirectory,
-                    Manuscript,
-                    ArticleCache,
-                    projectDefinitions
-                )
-            articlesNotFound += notFound
-        else:
-            CitationData = []
+    extraFiles = [
+        f for f in os.listdir(TempPath)
+        if f.endswith(".caption")
+    ]
+
+    allContentFiles = [[texFileName]] + segmentSequences + [extraFiles]
+
+    print("Located content files:")
+    for f in allContentFiles:
+        print(f)
+
+    for FileName in itertools.chain.from_iterable(allContentFiles):
+        ManuscriptPath = os.path.join(TempPath, FileName)
+        with open(ManuscriptPath) as mf:
+            Manuscript = mf.read()
+            print('Parsing file %s' % FileName)
+            if options.linkReferences:
+                Manuscript, CitationData, notFound =\
+                    bibParser.parseManuscriptReferences(
+                        ManuscriptDirectory,
+                        Manuscript,
+                        ArticleCache,
+                        projectDefinitions
+                    )
+                articlesNotFound += notFound
+            else:
+                CitationData = []
 
         ArticleList += CitationData
 
@@ -272,9 +285,9 @@ def buildProjectWithDefinitions(options):
         if options.debugMode:
             print("%s -> %s" % (FileName, outputPath))
 
-        output = open(outputPath, 'w')
-        output.write(Manuscript)
-        output.close()
+        with open(outputPath, 'w') as output:
+            output.write(Manuscript)
+
         print("\n\n")
 
     json.dump(

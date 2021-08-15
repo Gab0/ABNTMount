@@ -109,69 +109,78 @@ def parseManuscriptReferences(WorkingDirectory: str,
 
     # Build article info results from Cache and from remote PUBMED;
     ArticleInfoResults = []
-    DummyInfoResults = []
-
+    BibIDs = []
     for ArticleId in ArticleIDs:
         onMissing = [
             A for A in MissingArticleResults
             if ArticleId in A[0]
         ]
-        if ArticleId in ArticleCache.keys():
-            ArticleInfoResults.append(ArticleCache[ArticleId])
-        elif onMissing:
-            ArticleInfoResults.append(onMissing[0][1])
-        else:
-            DummyInfoResults.append({"IDs": [ArticleId]})
 
-    articleTextIds = zip(ReferencePatterns, ArticleIDs)
-    for TEXT in articleTextIds:
-        print("%s\t%s" % (TEXT[0], TEXT[1]))
+        if ArticleId in ArticleCache.keys():
+            Entry = ArticleCache[ArticleId]
+            D = 1
+        elif onMissing:
+            Entry = onMissing[0][1]
+            D = 2
+        else:
+            Entry = ""
+            D = 3
+
+        assert isinstance(Entry, str), \
+            f"Source {D}\nWeird type for Entry.\n{Entry}."
+
+        assert isinstance(ArticleId, str), \
+            f"Invalid type for ArticleId {ArticleId}."
+
+        ArticleInfoResults.append(Entry)
+        BibIDs.append([ArticleId])
 
     print("Expanding References %i/%i" % (len(ArticleInfoResults),
                                           len(ArticleIDs)))
 
     ManuscriptText = renderCitationInManuscript(ManuscriptText,
                                                 ReferencePatterns,
-                                                ArticleIDs,
+                                                BibIDs,
                                                 projectDefinitions)
-
-    for A in ArticleInfoResults:
-        assert isinstance(A, str)
 
     return ManuscriptText, ArticleInfoResults, notFound
 
 
 def renderCitationInManuscript(ManuscriptText: str,
                                ReferencePatterns: List[str],
-                               BibIDs: List[str],
+                               BibIDs: List[List[str]],
                                projectDefinitions) -> str:
 
     CitationCommands = loadCitationCommands(projectDefinitions)
 
     notFound = []
-    for o, ocurrence in enumerate(ReferencePatterns):
-        Found = False
-        for BibID in BibIDs:
-            if BibIDs[o] in BibID:
-                if "<" in ocurrence:
-                    TexCommand = '\\%s' % CitationCommands[1]
-                elif "V" in ocurrence:
-                    TexCommand = '\\%s' % CitationCommands[2]
-                else:
-                    TexCommand = '\\%s' % CitationCommands[0]
+    for pattern in ReferencePatterns:
+        ReplacementIDs = []
+        for BibIDAliasGroup in BibIDs:
+            for BibID in BibIDAliasGroup:
+                if BibID in pattern:
+                    ReplacementIDs.append(BibIDAliasGroup[0])
 
-                TexCommand += "{%s}"
+        if ReplacementIDs:
+            if "<" in pattern:
+                TexCommand = '\\%s' % CitationCommands[1]
+            elif "V" in pattern:
+                TexCommand = '\\%s' % CitationCommands[2]
+            else:
+                TexCommand = '\\%s' % CitationCommands[0]
 
-                Replacement = TexCommand % BibID[0]
-                ManuscriptText = ManuscriptText.replace(
-                    ocurrence,
-                    Replacement, 1)
+            TexCommand += "{%s}"
 
-                Found = True
-                break
+            Replacement = TexCommand % ",".join(ReplacementIDs)
+            ManuscriptText = ManuscriptText.replace(
+                pattern,
+                Replacement, 1)
 
-        if not Found:
-            notFound.append(BibIDs[o])
-            print("NOT FOUND %s" % BibIDs[o])
+            print(f"REPLACING\t{pattern}\t{Replacement}")
+
+        else:
+            W = BibIDAliasGroup
+            notFound.append(W)
+            print(f"NOT FOUND {W}")
 
     return ManuscriptText

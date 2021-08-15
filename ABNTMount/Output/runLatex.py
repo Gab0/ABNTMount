@@ -36,6 +36,11 @@ def runLatex(options, TexPath, WD):
             print("%s\n%i" % (" ".join(CMD), success))
             input("Debug: Press enter to continue.")
 
-    if any(results):
+    if any(r == 1 for r in results):
         print("ABNTMount failure: LATEX ERROR.")
+        for cmd, res in zip(commandSequence, results):
+            cmd = " ".join(cmd)
+            print(f"{cmd} - {res}")
+        print(results)
         sys.exit(1)
+
