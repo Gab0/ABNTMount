@@ -29,11 +29,11 @@ def locateReferencePatterns(Manuscript: str, projectDefinitions):
         return i
 
     if Pattern == "abntm":
-        searchPattern = r"<*V*\[\[[\w./-]+\]\]"
+        searchPattern = r"<*V*\[\[[\w\.\/\-\_]+\]\]"
         searchStrip = "<V[ ]"
 
     elif Pattern == "md":
-        searchPattern = r"<*\[@[@\w./-; ]+\]"
+        searchPattern = r"<*\[@[@\w\.\/\-; \_]+\]"
         searchStrip = "<[@ ]"
 
     def ArticleIDFromText(Text, searchStrip):
@@ -43,7 +43,6 @@ def locateReferencePatterns(Manuscript: str, projectDefinitions):
     ReferencePatterns = re.findall(searchPattern, Manuscript)
 
     def flatten(x):
-        print(x)
         return [item for sublist in x for item in sublist]
 
     ArticleIDs = flatten([ArticleIDFromText(Text, searchStrip)
@@ -58,6 +57,7 @@ def downloadMissingArticleInformation(ArticleIDs: List[str],
     MissingArticles = []
     for ArticleId in ArticleIDs:
         if ArticleId not in ArticleCache.keys():
+            print(ArticleId)
             MissingArticles.append(ArticleId)
 
     # Query missing article ids;
@@ -81,6 +81,7 @@ def downloadMissingArticleInformation(ArticleIDs: List[str],
     for A in MissingArticleResults:
         assert isinstance(A, tuple)
         assert len(A) == 2
+    print(MissingArticleResults)
     return MissingArticleResults
 
 
@@ -125,6 +126,8 @@ def parseManuscriptReferences(WorkingDirectory: str,
         else:
             Entry = ""
             D = 3
+            print(ArticleCache.keys())
+            print(f"Not found: {ArticleId}")
 
         assert isinstance(Entry, str), \
             f"Source {D}\nWeird type for Entry.\n{Entry}."
