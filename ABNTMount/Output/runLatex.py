@@ -9,7 +9,12 @@ def runLatex(options, TexPath, WD):
     TexPathBody = TexPath.split('.')[0]
 
     # Define Commands;
-    LatexCMD = [options.LatexExecutable, "-halt-on-error", TexPath]
+    LatexCMD = [
+        options.LatexExecutable,
+        "-halt-on-error",
+        "-shell-escape",
+        TexPath
+    ]
     BIBCMD = ['bibtex', TexPathBody]
     docCMD = ['mk4ht', 'ooxelatex', TexPath]
     # pandocCMD = ["pandoc", "-s", TexPath, "-o", "%s.txt" % TexPath]
