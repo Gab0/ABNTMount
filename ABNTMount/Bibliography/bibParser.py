@@ -158,11 +158,11 @@ def renderCitationInManuscript(ManuscriptText: str,
 
     notFound = []
     for pattern in ReferencePatterns:
-        ReplacementIDs = []
+        ReplacementIDs = set()
         for BibIDAliasGroup in BibIDs:
             for BibID in BibIDAliasGroup:
                 if BibID in pattern:
-                    ReplacementIDs.append(BibIDAliasGroup[0])
+                    ReplacementIDs.add(BibIDAliasGroup[0])
 
         if ReplacementIDs:
             if "<" in pattern:
