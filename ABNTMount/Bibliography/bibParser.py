@@ -167,7 +167,7 @@ def renderCitationInManuscript(ManuscriptText: str,
         if ReplacementIDs:
             if "<" in pattern:
                 TexCommand = '\\%s' % CitationCommands[1]
-            elif "V" in pattern:
+            elif re.findall(r"V.*\[", pattern):
                 TexCommand = '\\%s' % CitationCommands[2]
             else:
                 TexCommand = '\\%s' % CitationCommands[0]
