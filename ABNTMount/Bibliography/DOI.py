@@ -15,7 +15,12 @@ def getCitationInfo(DOI):
 
     BibIDs = re.findall(r"@\w+{([\d\w_-]+),", content)
 
-    content = content.replace(BibIDs[0], DOI)
+    try:
+        content = content.replace(BibIDs[0], DOI)
+    except IndexError:
+        print(f"Failure to fetch ID{DOI} ")
+        print(content)
+        exit(1)
     IDs = [DOI] + BibIDs
     print(IDs)
     return IDs, content
