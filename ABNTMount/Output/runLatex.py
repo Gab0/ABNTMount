@@ -40,6 +40,9 @@ def runLatex(options, TexPath, WD):
         if options.debugMode:
             print("%s\n%i" % (" ".join(CMD), success))
             input("Debug: Press enter to continue.")
+        if success == 1:
+            print("Failure")
+            sys.exit(success)
 
     if any(r == 1 for r in results):
         print("ABNTMount failure: LATEX ERROR.")
